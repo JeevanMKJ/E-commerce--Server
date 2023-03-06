@@ -19,9 +19,7 @@ To install this application use the “git clone []” repository to the local m
 
 ## Usage
 
-To use this application: open the folder in “VS Code”. Open the “integrated terminal” for “server.js”, run an "npm i", source the db/schema file in mysql, and seed the data with "node seeds/index.js". Open Insomnia to get, push, post or delete data. [Walkthrough video of application](https://drive.google.com/file/d/1DedU9q1guJ0UU0TES_DPMxwKYI_Vx0L8/view?usp=sharing)
-
-[Image of application](./assets/images/Screen%20Shot%20of%20application.png)
+To use this application: open the folder in “VS Code”. Open the “integrated terminal” for “server.js”, run an "npm i", source the db/schema file in mysql, and seed the data with "node seeds/index.js". Open Insomnia to get, push, post or delete data. [Walkthrough video of application](https://drive.google.com/file/d/1jS8D7sbEE79sg8gC5UPtGRnDjYewSjRd/view?usp=sharing)
 
 ## License
 

@@ -1,96 +1,209 @@
-const router = require('express').Router();
-const { Product, Category, Tag, ProductTag } = require('../../models');
+const router = require("express").Router();
+const {
+  Product,
+  Category,
+  Tag,
+  ProductTag,
+  sequelize,
+} = require("../../models");
 
-// The `/api/products` endpoint
-
-// get all products
-router.get('/', (req, res) => {
-  // find all products
-  // be sure to include its associated Category and Tag data
+router.get("/", async (req, res) => {
+  try {
+    const products = await Product.findAll({
+      include: [
+        {
+          model: Category,
+          attributes: ["id", "category_name"],
+        },
+        {
+          model: Tag,
+          attributes: ["id", "tag_name"],
+          through: { attributes: [] },
+          as: "product_tags",
+        },
+      ],
+    });
+    res.status(200).json(products);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal server error" });
+  }
 });
 
-// get one product
-router.get('/:id', (req, res) => {
-  // find a single product by its `id`
-  // be sure to include its associated Category and Tag data
-});
-
-// create new product
-router.post('/', (req, res) => {
-  /* req.body should look like this...
-    {
-      product_name: "Basketball",
-      price: 200.00,
-      stock: 3,
-      tagIds: [1, 2, 3, 4]
+router.get("/:productId", async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const product = await Product.findByPk(productId, {
+      include: [
+        {
+          model: Category,
+          attributes: ["id", "category_name"],
+        },
+        {
+          model: Tag,
+          attributes: ["id", "tag_name"],
+          through: { attributes: [] },
+          as: "product_tags",
+        },
+      ],
+    });
+    if (!product) {
+      return res.status(404).json({ message: "Product not found" });
     }
-  */
-  Product.create(req.body)
-    .then((product) => {
-      // if there's product tags, we need to create pairings to bulk create in the ProductTag model
-      if (req.body.tagIds.length) {
-        const productTagIdArr = req.body.tagIds.map((tag_id) => {
-          return {
-            product_id: product.id,
-            tag_id,
-          };
-        });
-        return ProductTag.bulkCreate(productTagIdArr);
+    res.status(200).json(product);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+router.post("/", async (req, res) => {
+  try {
+    const { product_name, price, stock, category_id, tagIds } = req.body;
+    if (!product_name || !price || !stock || !category_id) {
+      return res.status(400).json({ message: "Invalid input data" });
+    }
+    const product = await sequelize.transaction(async (t) => {
+      const newProduct = await Product.create(
+        {
+          product_name,
+          price,
+          stock,
+          category_id,
+        },
+        { transaction: t }
+      );
+      if (tagIds && tagIds.length) {
+        const tags = await Tag.findAll({ where: { id: tagIds } });
+        if (tags.length !== tagIds.length) {
+          throw new Error("Invalid tag ids");
+        }
+        const productTags = tagIds.map((tag_id) => ({
+          product_id: newProduct.id,
+          tag_id,
+        }));
+        await ProductTag.bulkCreate(productTags, { transaction: t });
       }
-      // if no product tags, just respond
-      res.status(200).json(product);
-    })
-    .then((productTagIds) => res.status(200).json(productTagIds))
-    .catch((err) => {
-      console.log(err);
-      res.status(400).json(err);
+      return newProduct;
     });
+    const savedProduct = await Product.findByPk(product.id, {
+      include: [
+        {
+          model: Category,
+          attributes: ["id", "category_name"],
+        },
+        {
+          model: Tag,
+          attributes: ["id", "tag_name"],
+          through: { attributes: [] },
+          as: "product_tags",
+        },
+      ],
+    });
+    res.status(201).json(savedProduct);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal server error" });
+  }
 });
 
-// update product
-router.put('/:id', (req, res) => {
-  // update product data
-  Product.update(req.body, {
-    where: {
-      id: req.params.id,
-    },
-  })
-    .then((product) => {
-      // find all associated tags from ProductTag
-      return ProductTag.findAll({ where: { product_id: req.params.id } });
-    })
-    .then((productTags) => {
-      // get list of current tag_ids
-      const productTagIds = productTags.map(({ tag_id }) => tag_id);
-      // create filtered list of new tag_ids
-      const newProductTags = req.body.tagIds
-        .filter((tag_id) => !productTagIds.includes(tag_id))
-        .map((tag_id) => {
-          return {
-            product_id: req.params.id,
-            tag_id,
-          };
-        });
-      // figure out which ones to remove
-      const productTagsToRemove = productTags
-        .filter(({ tag_id }) => !req.body.tagIds.includes(tag_id))
-        .map(({ id }) => id);
+router.put("/:productId", async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const { product_name, price, stock, category_id, tagIds } = req.body;
 
-      // run both actions
-      return Promise.all([
-        ProductTag.destroy({ where: { id: productTagsToRemove } }),
-        ProductTag.bulkCreate(newProductTags),
-      ]);
-    })
-    .then((updatedProductTags) => res.json(updatedProductTags))
-    .catch((err) => {
-      // console.log(err);
-      res.status(400).json(err);
+    const product = await Product.findByPk(productId);
+    if (!product) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    if (category_id) {
+      const category = await Category.findByPk(category_id);
+      if (!category) {
+        return res.status(400).json({ message: "Invalid category id" });
+      }
+    }
+
+    if (tagIds && tagIds.length) {
+      const tags = await Tag.findAll({ where: { id: tagIds } });
+      if (tags.length !== tagIds.length) {
+        return res.status(400).json({ message: "Invalid tag ids" });
+      }
+    }
+
+    const updatedProduct = await sequelize.transaction(async (t) => {
+      await product.update(
+        {
+          product_name: product_name || product.product_name,
+          price: price || product.price,
+          stock: stock || product.stock,
+          category_id: category_id || product.category_id,
+        },
+        { transaction: t }
+      );
+
+      if (tagIds && tagIds.length) {
+        await ProductTag.destroy(
+          { where: { product_id: productId } },
+          { transaction: t }
+        );
+        const productTags = tagIds.map((tag_id) => ({
+          product_id: productId,
+          tag_id,
+        }));
+        await ProductTag.bulkCreate(productTags, { transaction: t });
+      } else {
+        await ProductTag.destroy(
+          { where: { product_id: productId } },
+          { transaction: t }
+        );
+      }
+
+      return await Product.findByPk(productId, {
+        include: [
+          {
+            model: Category,
+            attributes: ["id", "category_name"],
+          },
+          {
+            model: Tag,
+            attributes: ["id", "tag_name"],
+            through: { attributes: [] },
+            as: "product_tags",
+          },
+        ],
+      });
     });
+
+    res.status(200).json(updatedProduct);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal server error" });
+  }
 });
 
-router.delete('/:id', (req, res) => {
-  // delete one product by its `id` value
+router.delete("/:productId", async (req, res) => {
+  try {
+    const { productId } = req.params;
+
+    const product = await Product.findByPk(productId);
+    if (!product) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    await sequelize.transaction(async (t) => {
+      await ProductTag.destroy(
+        { where: { product_id: productId } },
+        { transaction: t }
+      );
+      await product.destroy({ transaction: t });
+    });
+
+    res.status(204).send();
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal server error" });
+  }
 });
 
 module.exports = router;
